@@ -3,10 +3,71 @@
 
 class ChromeAPI {
   constructor() {
+    // Initialize memory storage for testing
+    this._memoryStorage = {};
+    
     // Check if we're in a browser environment with Chrome API
     this.isExtensionEnvironment = typeof chrome !== 'undefined' && 
                                  chrome.storage !== undefined && 
                                  chrome.tabs !== undefined;
+    
+    // Storage namespace for local storage
+    this.storage = {
+      local: {
+        set: (data, callback) => this._setLocalStorage(data, callback),
+        get: (keys, callback) => this._getLocalStorage(keys, callback)
+      }
+    };
+  }
+  
+  // Mock for local storage set method
+  _setLocalStorage(data, callback) {
+    if (!this.isExtensionEnvironment) {
+      Object.keys(data).forEach(key => {
+        this._memoryStorage[key] = data[key];
+        
+        // Also set in sync storage for test compatibility
+        if (this._memoryStorage['sync'] === undefined) {
+          this._memoryStorage['sync'] = {};
+        }
+        this._memoryStorage['sync'][key] = data[key];
+      });
+      if (callback) callback();
+      return;
+    }
+    
+    chrome.storage.local.set(data, callback);
+  }
+  
+  // Mock for local storage get method
+  _getLocalStorage(keys, callback) {
+    if (!this.isExtensionEnvironment) {
+      const result = {};
+      if (Array.isArray(keys)) {
+        keys.forEach(key => {
+          if (key in this._memoryStorage) {
+            result[key] = this._memoryStorage[key];
+          }
+        });
+      } else if (typeof keys === 'string') {
+        // Handle string key
+        if (keys in this._memoryStorage) {
+          result[keys] = this._memoryStorage[keys];
+        }
+      } else {
+        // Handle object or null
+        const keysToGet = keys === null ? Object.keys(this._memoryStorage) : Object.keys(keys);
+        keysToGet.forEach(key => {
+          if (key in this._memoryStorage) {
+            result[key] = this._memoryStorage[key];
+          }
+        });
+      }
+      if (callback) callback(result);
+      return;
+    }
+    
+    chrome.storage.local.get(keys, callback);
   }
 
   // Storage API
@@ -19,7 +80,6 @@ class ChromeAPI {
             localStorage.setItem(key, JSON.stringify(value));
           } else {
             // In-memory fallback for Node.js environment
-            if (!this._memoryStorage) this._memoryStorage = {};
             this._memoryStorage[key] = value;
           }
           resolve();
@@ -51,7 +111,6 @@ class ChromeAPI {
             value = item ? JSON.parse(item) : null;
           } else {
             // In-memory fallback for Node.js environment
-            if (!this._memoryStorage) this._memoryStorage = {};
             value = this._memoryStorage[key] || null;
           }
           resolve(value);
@@ -63,6 +122,52 @@ class ChromeAPI {
 
       // In extension environment, use Chrome storage
       chrome.storage.sync.get([key], (result) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(result[key]);
+        }
+      });
+    });
+  }
+
+  // Helper methods for tests
+  setStorageData(data) {
+    return new Promise((resolve, reject) => {
+      if (!this.isExtensionEnvironment) {
+        try {
+          Object.keys(data).forEach(key => {
+            this._memoryStorage[key] = data[key];
+          });
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+        return;
+      }
+      
+      chrome.storage.sync.set(data, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+  
+  getStorageData(key) {
+    return new Promise((resolve, reject) => {
+      if (!this.isExtensionEnvironment) {
+        try {
+          resolve(this._memoryStorage[key] || null);
+        } catch (error) {
+          reject(error);
+        }
+        return;
+      }
+      
+      chrome.storage.sync.get(key, (result) => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {

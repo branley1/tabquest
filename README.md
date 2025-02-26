@@ -1,4 +1,4 @@
-# TabQuest - Turn Web Browsing into an RPG Adventure
+# TabQuest - Turn Your Web Browsing into an RPG Adventure!
 
 TabQuest is a Chrome extension that transforms your everyday web browsing into an exciting RPG-style adventure. Earn XP and gold, encounter monsters, find treasure, solve riddles, and level up – all while browsing the web!
 
@@ -120,7 +120,7 @@ MIT License - Feel free to modify and distribute this extension.
 
 Created by Branley Mmasi
 
-Pixel art assets for monsters, items, and UI elements are placeholders that should be replaced with original artwork before public distribution.
+Assets for monsters, items, and UI elements are placeholders and will be replaced with original artwork before public distribution.
 
 ---
 

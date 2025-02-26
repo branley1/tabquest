@@ -21,18 +21,17 @@ import {
 } from '../utils/storage.js';
 
 import {
-  showMonsterNotification,
-  showTreasureNotification,
-  showRiddleNotification,
-  showPowerUpNotification,
   showLevelUpNotification,
   showQuestCompletionNotification,
   showXPNotification,
   showGoldNotification,
-  showEventNotification
+  showEventNotification,
+  showAchievementNotification,
+  showTabClosedNotification
 } from '../utils/notifications.js';
 
 import chromeAPI from '../utils/chrome-api.js';
+import { checkAchievements } from '../utils/achievements.js';
 
 // Constants
 const EVENT_PROBABILITY = 0.3; // 30% chance of event on tab creation
@@ -47,15 +46,34 @@ let tabTimestamps = {};
 
 // Initialize the game state
 const initGameState = async () => {
-  // Load player data from storage
-  const playerData = await loadPlayerData();
-  
-  if (playerData) {
-    player = new Player(playerData);
-  } else {
-    // Create a new player if none exists
-    player = new Player();
-    await savePlayerData(player.toJSON());
+  try {
+    // Load player data from storage
+    const playerData = await loadPlayerData();
+    
+    if (playerData && playerData.characterClass) {
+      // Player exists and has already selected a class
+      player = new Player(playerData);
+    } else {
+      // Create a new player if none exists or class not selected
+      player = new Player(playerData || {});
+      await savePlayerData(player.toJSON());
+      
+      // Set a flag indicating this is a new player (or needs class selection)
+      await chromeAPI.saveData('needsClassSelection', true);
+    }
+
+    // Ensure player has quests - only initialize if empty
+    if (!player.quests || player.quests.length === 0) {
+      // Import initial quests from events.js and add them to the player
+      player.quests = [...quests];
+      // Save the updated player data with quests
+      await savePlayerData(player.toJSON());
+    }
+    
+    return player; // Return player for testing
+  } catch (error) {
+    console.error('Error initializing game state:', error);
+    return null;
   }
 };
 
@@ -133,6 +151,15 @@ const handleTabRemoved = async (tabId, removeInfo) => {
       if (leveledUp) {
         await showLevelUpNotification(player.level);
       }
+
+      // Check for new achievements
+      const newAchievements = checkAchievements(player, 'monsters_defeated', player.quests.filter(q => q.type === 'monster').length);
+      if (newAchievements.length > 0) {
+        // Show achievement notifications
+        newAchievements.forEach(achievement => {
+          showAchievementNotification(achievement.title);
+        });
+      }
     }
   } catch (error) {
     console.error('Error handling tab removal:', error);
@@ -190,6 +217,15 @@ const resolveCurrentEvent = async (sendResponse) => {
   
   // Save updated player data
   await savePlayerData(player.toJSON());
+  
+  // Check for new achievements
+  const newAchievements = checkAchievements(player, event.type, event.data.value);
+  if (newAchievements.length > 0) {
+    // Show achievement notifications
+    newAchievements.forEach(achievement => {
+      showAchievementNotification(achievement.title);
+    });
+  }
   
   sendResponse({ success: true });
 };
@@ -347,6 +383,31 @@ chromeAPI.addMessageListener((message, sender, sendResponse) => {
           .catch(error => {
             console.error('Error adding quest:', error);
             sendResponse({ error: error.message });
+          });
+        break;
+        
+      case 'setCharacterClass':
+        if (!message.className) {
+          sendResponse({ success: false, error: 'No class name provided' });
+          return;
+        }
+        
+        loadPlayerData()
+          .then(playerData => {
+            const player = new Player(playerData || {});
+            const success = player.setCharacterClass(message.className);
+            
+            if (!success) {
+              throw new Error(`Invalid character class: ${message.className}`);
+            }
+            
+            return savePlayerData(player.toJSON());
+          })
+          .then(() => {
+            sendResponse({ success: true });
+          })
+          .catch(error => {
+            sendResponse({ success: false, error: error.message });
           });
         break;
         

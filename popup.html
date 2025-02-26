@@ -13,6 +13,7 @@
       <h1>TabQuest</h1>
       <div class="player-info">
         <div class="level-badge" id="level-badge">1</div>
+        <div class="player-class" id="player-class"></div>
         <div class="player-stats">
           <div class="stat">
             <img src="icons/xp.svg" alt="XP" class="stat-icon" id="xp-icon">
@@ -26,9 +27,9 @@
       </div>
     </header>
 
-    <main>
+    <main id="game-container">
       <!-- Character selection (shown only if no class is selected) -->
-      <div id="character-selection" style="display: none;">
+      <div id="character-selection" class="hidden">
         <h2>Choose Your Character Class</h2>
         <div class="character-options">
           <div class="character-option" data-class="warrior">
@@ -47,6 +48,7 @@
             <p>-10% XP, +20% Gold</p>
           </div>
         </div>
+        <button id="confirm-class" disabled>Confirm Selection</button>
       </div>
 
       <!-- Current event (shown only when there's an active event) -->

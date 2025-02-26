@@ -14,6 +14,7 @@ const noBuffsMessage = document.getElementById('no-buffs-message');
 const questsContainer = document.getElementById('quests-container');
 const achievementsContainer = document.getElementById('achievements-container');
 const noAchievementsMessage = document.getElementById('no-achievements-message');
+const gameContainer = document.getElementById('game-container');
 
 // Templates
 const monsterTemplate = document.getElementById('monster-event-template');
@@ -31,31 +32,7 @@ let selectedClass = null;
 
 // If using ES modules (recommended)
 import * as storage from './src/utils/storage.js';
-
-// Initialize the popup
-const initPopup = async () => {
-  await loadPlayerData();
-  await loadCurrentEvent();
-  
-  // Check if player has selected a class
-  if (!player.characterClass) {
-    showCharacterSelection();
-  } else {
-    // Update UI with player data
-    updatePlayerStats();
-    updateBuffs();
-    updateQuests();
-    updateAchievements();
-    
-    // Display current event if any
-    if (currentEvent) {
-      displayCurrentEvent();
-    }
-  }
-  
-  // Start timer to refresh buffs
-  setInterval(updateBuffs, 1000);
-};
+import { Player, CHARACTER_CLASSES } from './src/models/player.js';
 
 // Load player data from background script
 const loadPlayerData = async () => {
@@ -91,24 +68,76 @@ const updatePlayerStats = () => {
   xpNeeded.textContent = xpForNextLevel;
   
   playerGold.textContent = player.gold;
+  
+  // Update character class display
+  const playerClassElement = document.getElementById('player-class');
+  if (playerClassElement && player.characterClass) {
+    const characterClassName = CHARACTER_CLASSES[player.characterClass]?.name || player.characterClass;
+    playerClassElement.textContent = characterClassName;
+    
+    // You could also add a class icon
+    // playerClassElement.innerHTML = `<img src="icons/classes/${player.characterClass}.svg" alt="${characterClassName}" class="class-icon-small"> ${characterClassName}`;
+  }
 };
 
 // Show character selection screen
 const showCharacterSelection = () => {
+  gameContainer.classList.add('hidden');
   characterSelection.classList.remove('hidden');
   
-  // Add event listeners to class cards
-  const classCards = document.querySelectorAll('.class-card');
-  classCards.forEach(card => {
+  // Clear any existing content and rebuild
+  const classesContainer = document.querySelector('.class-cards-container');
+  classesContainer.innerHTML = '';
+  
+  // Get class definitions
+  const classes = {
+    warrior: {
+      name: 'Warrior',
+      description: 'Gains 10% more XP from defeating monsters',
+      icon: 'icons/warrior.svg',
+      bonuses: 'XP +10%'
+    },
+    mage: {
+      name: 'Mage',
+      description: 'Gains 20% more XP from all sources',
+      icon: 'icons/mage.svg',
+      bonuses: 'XP +20%'
+    },
+    rogue: {
+      name: 'Rogue',
+      description: 'Gains 20% more gold from all sources',
+      icon: 'icons/rogue.svg',
+      bonuses: 'Gold +20%'
+    }
+  };
+  
+  // Create class cards with detailed information
+  Object.keys(classes).forEach(className => {
+    const classInfo = classes[className];
+    const card = document.createElement('div');
+    card.className = 'class-card';
+    card.dataset.class = className;
+    
+    card.innerHTML = `
+      <img src="${classInfo.icon}" alt="${classInfo.name}" class="class-icon">
+      <h3>${classInfo.name}</h3>
+      <p>${classInfo.description}</p>
+      <div class="class-bonuses">${classInfo.bonuses}</div>
+    `;
+    
+    classesContainer.appendChild(card);
+    
+    // Add event listener
     card.addEventListener('click', () => {
       // Remove selected class from all cards
-      classCards.forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('.class-card').forEach(c => 
+        c.classList.remove('selected'));
       
       // Add selected class to clicked card
       card.classList.add('selected');
       
       // Set the selected class
-      selectedClass = card.dataset.class;
+      selectedClass = className;
       
       // Enable confirm button
       confirmClassBtn.disabled = false;
@@ -118,24 +147,53 @@ const showCharacterSelection = () => {
   // Add event listener to confirm button
   confirmClassBtn.addEventListener('click', async () => {
     if (selectedClass) {
+      // Disable button and show loading state
+      confirmClassBtn.disabled = true;
+      confirmClassBtn.textContent = 'Creating character...';
+      
       // Send message to background script to set class
       chrome.runtime.sendMessage({
         action: 'setCharacterClass',
         className: selectedClass
       }, async (response) => {
         if (response && response.success) {
-          // Hide character selection and reload data
-          characterSelection.classList.add('hidden');
-          await loadPlayerData();
+          // Clear the needs class selection flag
+          await chromeAPI.storage.local.set({ 'needsClassSelection': false });
           
-          // Update UI with player data
-          updatePlayerStats();
+          // Add a nice transition effect
+          characterSelection.classList.add('fade-out');
           
-          // Load current event if any
-          await loadCurrentEvent();
-          if (currentEvent) {
-            displayCurrentEvent();
-          }
+          // Wait for transition
+          setTimeout(async () => {
+            // Hide character selection and reload data
+            characterSelection.classList.add('hidden');
+            characterSelection.classList.remove('fade-out');
+            
+            // Show welcome message
+            const playerData = await loadPlayerData();
+            const player = new Player(playerData);
+            
+            // Show welcome notification
+            showNotification(
+              `Welcome, brave ${CHARACTER_CLASSES[player.characterClass].name}!`, 
+              'Your adventure begins now. Close tabs to earn XP and gold!'
+            );
+            
+            // Update UI with player data
+            gameContainer.classList.remove('hidden');
+            updatePlayerStats();
+            
+            // Load current event if any
+            await loadCurrentEvent();
+            if (currentEvent) {
+              displayCurrentEvent();
+            }
+          }, 500);
+        } else {
+          // Show error
+          confirmClassBtn.textContent = 'Try Again';
+          confirmClassBtn.disabled = false;
+          showNotification('Error', response.error || 'Failed to select class');
         }
       });
     }
@@ -417,8 +475,28 @@ async function checkNewUser() {
 
 // Initialize popup when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
-  // First check if player exists
-  checkNewUser();
+  // First check if we need character selection
+  const data = await chromeAPI.storage.local.get('needsClassSelection');
+  const needsClassSelection = data.needsClassSelection;
+  
+  // Always load player data to get the current state
+  await loadPlayerData();
+  
+  // Show character selection if needed or if player has no class
+  if (needsClassSelection || !player || !player.characterClass) {
+    showCharacterSelection();
+  } else {
+    // Normal game initialization
+    updatePlayerStats();
+    updateQuests();
+    await loadCurrentEvent();
+    if (currentEvent) {
+      displayCurrentEvent();
+    }
+  }
+  
+  // Add class change button to settings
+  addClassChangeButton();
 });
 
 // This should be dynamic, not hardcoded
@@ -478,3 +556,34 @@ if (img) {
 // Change any JS that sets image sources:
 document.getElementById('gold-icon').src = 'icons/gold.svg';
 document.getElementById('xp-icon').src = 'icons/xp.svg';
+
+// Add this function to allow changing class later
+const addClassChangeButton = () => {
+  const settingsContainer = document.querySelector('.settings-container');
+  if (!settingsContainer) return;
+  
+  const changeClassBtn = document.createElement('button');
+  changeClassBtn.textContent = 'Change Character Class';
+  changeClassBtn.className = 'settings-button';
+  
+  changeClassBtn.addEventListener('click', () => {
+    // Show character selection UI
+    showCharacterSelection();
+    
+    // Add a cancel button
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.className = 'secondary-button';
+    cancelBtn.style.marginRight = '10px';
+    
+    const buttonsContainer = document.querySelector('.character-selection-buttons');
+    buttonsContainer.prepend(cancelBtn);
+    
+    cancelBtn.addEventListener('click', () => {
+      characterSelection.classList.add('hidden');
+      gameContainer.classList.remove('hidden');
+    });
+  });
+  
+  settingsContainer.appendChild(changeClassBtn);
+};

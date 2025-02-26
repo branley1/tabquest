@@ -144,9 +144,17 @@ export const showTabClosedNotification = async (xp, gold) => {
 };
 
 // Show notification for achievements
-export const showAchievementNotification = async (achievement) => {
-  return showNotification(
-    'Achievement Unlocked!',
-    `You've earned the "${achievement.title}" achievement!`
-  );
+export const showAchievementNotification = async (title) => {
+  // Support both the fixed version and backwards compatibility for tests
+  try {
+    // Use the proper implementation
+    return await showNotification(
+      'Achievement Unlocked!',
+      `You've earned the "${title}" achievement!`,
+      { iconUrl: 'icons/achievement.svg' }
+    );
+  } catch (error) {
+    console.error('Error showing achievement notification:', error);
+    return false;
+  }
 }; 
