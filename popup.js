@@ -29,6 +29,9 @@ let player = null;
 let currentEvent = null;
 let selectedClass = null;
 
+// If using ES modules (recommended)
+import * as storage from './src/utils/storage.js';
+
 // Initialize the popup
 const initPopup = async () => {
   await loadPlayerData();
@@ -402,5 +405,76 @@ const updateAchievements = () => {
   });
 };
 
+// Check if user is new (no character selected yet)
+async function checkNewUser() {
+  const playerData = await storage.loadPlayerData();
+  if (!playerData || !playerData.characterClass) {
+    showCharacterSelection();
+  } else {
+    showGameInterface();
+  }
+}
+
 // Initialize popup when DOM is loaded
-document.addEventListener('DOMContentLoaded', initPopup); 
+document.addEventListener('DOMContentLoaded', async () => {
+  // First check if player exists
+  checkNewUser();
+});
+
+// This should be dynamic, not hardcoded
+async function loadPlayerStats() {
+  try {
+    const playerData = await storage.loadPlayerData();
+    
+    if (playerData) {
+      document.getElementById('level').textContent = playerData.level || 1;
+      document.getElementById('xp').textContent = 
+        `${playerData.xp || 0} / ${playerData.xpToNextLevel || 100} XP`;
+      document.getElementById('gold').textContent = 
+        `${playerData.gold || 0} Gold`;
+    } else {
+      // Initialize new player if no data exists
+      const newPlayer = {
+        level: 1,
+        xp: 0,
+        xpToNextLevel: 100,
+        gold: 0,
+        characterClass: null // This should be set during character selection
+      };
+      await storage.savePlayerData(newPlayer);
+      // Display values from new player object
+      document.getElementById('level').textContent = newPlayer.level;
+      document.getElementById('xp').textContent = 
+        `${newPlayer.xp} / ${newPlayer.xpToNextLevel} XP`;
+      document.getElementById('gold').textContent = 
+        `${newPlayer.gold} Gold`;
+    }
+  } catch (error) {
+    console.error('Failed to load player stats:', error);
+  }
+}
+
+// Set up character selection event listeners
+document.querySelectorAll('.character-option').forEach(option => {
+  option.addEventListener('click', async () => {
+    const characterClass = option.dataset.class;
+    // Initialize player with selected class
+    const newPlayer = new Player(characterClass);
+    await storage.savePlayerData(newPlayer.toJSON());
+    
+    // Hide selection screen, show game interface
+    showGameInterface();
+  });
+});
+
+const img = document.getElementById('xp-icon');
+if (img) {
+  img.onerror = () => console.error('Failed to load image:', img.src);
+  img.onload = () => console.log('Image loaded successfully:', img.src);
+} else {
+  console.warn('Element not found:', 'xp-icon');
+}
+
+// Change any JS that sets image sources:
+document.getElementById('gold-icon').src = 'icons/gold.svg';
+document.getElementById('xp-icon').src = 'icons/xp.svg';

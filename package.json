@@ -16,7 +16,8 @@
     "@babel/preset-env": "^7.18.0",
     "babel-jest": "^28.1.0",
     "jest": "^28.1.0",
-    "jest-environment-jsdom": "^28.1.0"
+    "jest-environment-jsdom": "^28.1.0",
+    "terser": "^5.39.0"
   },
   "babel": {
     "presets": [
@@ -30,4 +31,4 @@
       ]
     ]
   }
-} 
+}

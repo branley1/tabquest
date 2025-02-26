@@ -37,12 +37,23 @@ TabQuest is a Chrome extension that transforms your everyday web browsing into a
    npm install
    ```
 
-3. Build the extension:
+3. Make the build script executable (first time only):
+   ```
+   chmod +x build.sh
+   ```
+
+4. Build the extension:
    ```
    npm run build
    ```
 
-4. The bundled extension will be in the `dist` folder ready for loading into Chrome
+5. The bundled extension will be in the `dist` folder ready for loading into Chrome
+
+6. Load the built extension:
+   - Navigate to `chrome://extensions/`
+   - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select the `dist` folder
 
 ## How to Play
 
@@ -83,11 +94,16 @@ tabquest/
 ├── background.js           # Service worker entry point
 ├── content.js              # Content script
 ├── icons/                  # Extension icons
+├── public/                 # Public assets
+├── tests/                  # Test files
+├── coverage/               # Test coverage reports
+├── jest.config.js          # Jest configuration
 └── src/
     ├── background/         # Background service worker modules
+    ├── content/            # Content script modules
     ├── models/             # Game data models
-    ├── utils/              # Utility functions
-    └── popup/              # Popup UI components
+    ├── popup/              # Popup UI components
+    └── utils/              # Utility functions
 ```
 
 ### Adding New Features
@@ -102,7 +118,7 @@ MIT License - Feel free to modify and distribute this extension.
 
 ## Credits
 
-Created with ❤️ by Branley Mmasi
+Created by Branley Mmasi
 
 Pixel art assets for monsters, items, and UI elements are placeholders that should be replaced with original artwork before public distribution.
 

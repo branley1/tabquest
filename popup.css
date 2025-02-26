@@ -22,12 +22,69 @@
 }
 
 body {
-  font-family: 'Roboto', sans-serif;
-  background-color: var(--background-color);
-  color: var(--text-color);
-  width: 400px;
-  max-height: 600px;
-  overflow-y: auto;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f5f5f5;
+  color: #333;
+  margin: 0;
+  padding: 16px;
+  min-width: 400px;
+  max-width: 100%;
+}
+
+h1 {
+  color: #5D3FD3;
+  text-align: center;
+  font-size: 28px;
+  margin-top: 0;
+}
+
+.card {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 16px;
+  margin-bottom: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.section-title {
+  color: #5D3FD3;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 8px;
+  margin-top: 0;
+}
+
+.stats-container {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.level-indicator {
+  background-color: #FFC857;
+  color: #333;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 20px;
+  margin-right: 16px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.stat-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
 }
 
 h1, h2, h3, h4 {
@@ -97,11 +154,6 @@ header h1 {
   align-items: center;
   gap: 8px;
   font-size: 0.9em;
-}
-
-.stat-icon {
-  width: 20px;
-  height: 20px;
 }
 
 /* Sections */

@@ -15,11 +15,11 @@
         <div class="level-badge" id="level-badge">1</div>
         <div class="player-stats">
           <div class="stat">
-            <img src="icons/xp.png" alt="XP" class="stat-icon">
+            <img src="icons/xp.svg" alt="XP" class="stat-icon" id="xp-icon">
             <span id="player-xp">0</span> / <span id="xp-needed">100</span> XP
           </div>
           <div class="stat">
-            <img src="icons/gold.png" alt="Gold" class="stat-icon">
+            <img src="icons/gold.svg" alt="Gold" class="stat-icon">
             <span id="player-gold">0</span> Gold
           </div>
         </div>
@@ -28,29 +28,25 @@
 
     <main>
       <!-- Character selection (shown only if no class is selected) -->
-      <div id="character-selection" class="section hidden">
-        <h2>Choose Your Class</h2>
-        <div class="class-cards">
-          <div class="class-card" data-class="warrior">
-            <img src="icons/classes/warrior.png" alt="Warrior">
+      <div id="character-selection" style="display: none;">
+        <h2>Choose Your Character Class</h2>
+        <div class="character-options">
+          <div class="character-option" data-class="warrior">
+            <img src="icons/classes/warrior.svg" alt="Warrior">
             <h3>Warrior</h3>
             <p>+10% XP, -10% Gold</p>
-            <p>Masters of combat, warriors excel at defeating monsters.</p>
           </div>
-          <div class="class-card" data-class="mage">
-            <img src="icons/classes/mage.png" alt="Mage">
+          <div class="character-option" data-class="mage">
+            <img src="icons/classes/mage.svg" alt="Mage">
             <h3>Mage</h3>
             <p>+20% XP, -20% Gold</p>
-            <p>Scholars of the internet, mages gain more knowledge from browsing.</p>
           </div>
-          <div class="class-card" data-class="rogue">
-            <img src="icons/classes/rogue.png" alt="Rogue">
+          <div class="character-option" data-class="rogue">
+            <img src="icons/classes/rogue.svg" alt="Rogue">
             <h3>Rogue</h3>
             <p>-10% XP, +20% Gold</p>
-            <p>Treasure hunters who excel at finding valuable loot.</p>
           </div>
         </div>
-        <button id="confirm-class" class="button primary" disabled>Select Class</button>
       </div>
 
       <!-- Current event (shown only when there's an active event) -->
