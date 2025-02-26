@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build/distribution directory
+dist/
+
+# Test coverage
+coverage/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor specific files
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Extension specific
+*.crx
+*.pem
+*.zip
+
+# OS specific
+.DS_Store
+Thumbs.db
