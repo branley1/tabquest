@@ -19,13 +19,16 @@ import {
   showQuestCompletionNotification,
   showTabClosedNotification
 } from '../utils/notifications.js';
-import chromeAPI from '../utils/chrome-api.js';
+import { chromeAPI } from '../utils/chrome-api.js';
 import { checkAchievements } from '../utils/achievements.js';
 
 // Constants
-const MIN_TAB_DURATION = 5 * 1000; // Minimum tab duration for rewards (5 seconds)
-const MAX_XP_PER_SECOND = 0.1; // Maximum XP per second for tab duration
-const MAX_GOLD_PER_SECOND = 0.05; // Maximum gold per second for tab duration
+const MIN_TAB_DURATION = 5000; // 5 seconds
+const MAX_XP_PER_SECOND = 2;
+const MAX_GOLD_PER_SECOND = 1;
+
+// Initialize tab tracking
+const tabTimestamps = new Map();
 
 // Initialize event listeners
 function init() {
@@ -160,116 +163,135 @@ async function resolveCurrentEvent(sendResponse) {
 // Handle tab created event
 async function handleTabCreated(tab) {
   try {
-    if (!tab || !tab.id) return;
-    
-    // Load player data
-    const playerData = await loadPlayerData();
-    if (!playerData) return;
-    
-    console.log('Tab created:', tab.id);
-    return true;
+    if (!tab || !tab.id) {
+      console.error('Invalid tab data received in handleTabCreated');
+      return;
+    }
+
+    // Load player data first
+    const player = await loadPlayerData();
+    if (!player) {
+      console.error('Failed to load player data in handleTabCreated');
+      return;
+    }
+
+    // Store tab creation timestamp
+    tabTimestamps.set(tab.id, Date.now());
+
+    // Generate a random event
+    const event = await generateRandomEvent(player.level);
+    if (event) {
+      await saveCurrentEvent(event);
+      await showEventNotification(event);
+    }
   } catch (error) {
-    console.error('Error handling tab creation:', error);
-    return false;
+    console.error('Error in handleTabCreated:', error);
   }
 }
 
 // Handle tab removed event (tab closed)
-async function handleTabRemoved(tabId, removeInfo) {
+async function handleTabRemoved(tabId) {
   try {
-    if (!tabId) return;
-    
-    // Only process if player data exists
-    const playerData = await loadPlayerData();
-    if (!playerData) return;
-    
-    console.log('Tab removed:', tabId);
-    
-    // Process tab duration and rewards
-    const duration = await getTabDuration(tabId);
-    if (duration >= MIN_TAB_DURATION) {
-      // Calculate rewards based on duration
-      await processTabClosed(duration);
+    if (!tabId) {
+      console.error('Invalid tab ID received in handleTabRemoved');
+      return;
     }
-    
-    return true;
+
+    await processTabClosed(tabId);
   } catch (error) {
-    console.error('Error handling tab removal:', error);
-    return false;
+    console.error('Error in handleTabRemoved:', error);
   }
 }
 
 // Handle tab activated event
 async function handleTabActivated(activeInfo) {
   try {
-    if (!activeInfo || !activeInfo.tabId) return;
-    
-    console.log('Tab activated:', activeInfo.tabId);
-    return true;
+    if (!activeInfo || !activeInfo.tabId) {
+      console.error('Invalid tab activation data received');
+      return;
+    }
+
+    const tab = await chromeAPI.tabs.get(activeInfo.tabId);
+    if (!tab) {
+      console.error('Failed to get tab data in handleTabActivated');
+      return;
+    }
+
+    // Additional tab activation logic can be added here
   } catch (error) {
-    console.error('Error handling tab activation:', error);
-    return false;
+    console.error('Error in handleTabActivated:', error);
   }
 }
 
 // Handle tab updated event
 async function handleTabUpdated(tabId, changeInfo, tab) {
   try {
-    if (!tabId || !changeInfo) return;
-    
-    // Only process when tab is fully loaded
-    if (changeInfo.status === 'complete') {
-      console.log('Tab updated:', tabId);
+    if (!tabId || !tab) {
+      console.error('Invalid tab update data received');
+      return;
     }
-    return true;
+
+    // Additional tab update logic can be added here
   } catch (error) {
-    console.error('Error handling tab update:', error);
-    return false;
+    console.error('Error in handleTabUpdated:', error);
   }
 }
 
-// Process tab closed event with rewards
-async function processTabClosed(duration) {
+// Process tab closed event
+async function processTabClosed(tabId) {
   try {
+    const creationTime = tabTimestamps.get(tabId);
+    if (!creationTime) {
+      console.warn('No creation timestamp found for tab:', tabId);
+      return;
+    }
+
+    // Calculate duration
+    const duration = Date.now() - creationTime;
+    if (duration < MIN_TAB_DURATION) {
+      console.log('Tab was open for too short a duration');
+      return;
+    }
+
     // Load player data
-    const playerData = await loadPlayerData();
-    if (!playerData) return { xp: 0, gold: 0 };
-    
-    const player = new Player(playerData);
-    
-    // Get rewards based on tab duration
-    const { xp, gold } = getTabClosedReward(duration, MAX_XP_PER_SECOND, MAX_GOLD_PER_SECOND);
-    
-    // Apply rewards to player
-    player.addXP(xp);
-    player.addGold(gold);
-    
-    // Update quest progress - maintain backward compatibility
-    if (typeof updateQuestProgress === 'function') {
-      if (Array.isArray(player.quests)) {
-        player.quests = updateQuestProgress(player.quests, 'tabs_closed');
-      } else {
-        updateQuestProgress(player, 'tabs_closed');
-      }
+    const player = await loadPlayerData();
+    if (!player) {
+      console.error('Failed to load player data in processTabClosed');
+      return;
     }
-    
-    // Check for achievements
-    const newAchievements = checkAchievements(player, 'tabs_closed', player.stats?.tabsClosed || 0);
-    if (newAchievements && newAchievements.length > 0) {
-      // Process new achievements
-      console.log('New achievements earned:', newAchievements);
+
+    // Calculate rewards
+    const durationInSeconds = Math.floor(duration / 1000);
+    const xpGained = Math.min(durationInSeconds * MAX_XP_PER_SECOND, player.level * 100);
+    const goldGained = Math.min(durationInSeconds * MAX_GOLD_PER_SECOND, player.level * 50);
+
+    // Update player data
+    player.xp += xpGained;
+    player.gold += goldGained;
+
+    // Check for level up
+    if (player.xp >= player.level * 1000) {
+      player.level += 1;
+      player.xp = 0;
+      await showLevelUpNotification(player.level);
     }
-    
-    // Save player data
+
+    // Save updated player data
     await savePlayerData(player.toJSON());
-    
+
+    // Update quest progress
+    await updateQuestProgress(player.quests, 'closeTabs', 1);
+
+    // Check achievements
+    await checkAchievements(player);
+
     // Show notification
-    await showTabClosedNotification(xp, gold);
-    
-    return { xp, gold };
+    await showTabClosedNotification(xpGained, goldGained);
+
+    // Clean up
+    tabTimestamps.delete(tabId);
   } catch (error) {
-    console.error('Error processing tab closed rewards:', error);
-    return { xp: 0, gold: 0 };
+    console.error('Error in processTabClosed:', error);
   }
 }
 
@@ -284,5 +306,6 @@ export {
   handleTabRemoved,
   handleTabActivated,
   handleTabUpdated,
-  processTabClosed
+  processTabClosed,
+  tabTimestamps
 }; 

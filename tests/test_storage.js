@@ -1,6 +1,5 @@
 // Unit tests for the Storage utility
 import * as storage from '../src/utils/storage.js';
-import chromeAPI from '../src/utils/chrome-api.js';
 
 // Mock chrome.storage API
 jest.mock('../src/utils/chrome-api.js', () => ({
@@ -9,6 +8,9 @@ jest.mock('../src/utils/chrome-api.js', () => ({
   setStorageData: jest.fn(),
   removeStorageData: jest.fn()
 }));
+
+// Get the mocked module
+import chromeAPI from '../src/utils/chrome-api.js';
 
 describe('Storage Utility', () => {
   beforeEach(() => {
@@ -25,6 +27,7 @@ describe('Storage Utility', () => {
   describe('savePlayerData', () => {
     test('should save player data to storage', async () => {
       const playerData = { xp: 100, level: 2, gold: 50 };
+      chromeAPI.setStorageData.mockResolvedValueOnce();
       
       await storage.savePlayerData(playerData);
       
@@ -81,6 +84,7 @@ describe('Storage Utility', () => {
   describe('saveCurrentEvent', () => {
     test('should save current event to storage', async () => {
       const event = { type: 'monster', data: { name: 'Goblin' } };
+      chromeAPI.setStorageData.mockResolvedValueOnce();
       
       await storage.saveCurrentEvent(event);
       
@@ -136,6 +140,8 @@ describe('Storage Utility', () => {
   // Test clearCurrentEvent
   describe('clearCurrentEvent', () => {
     test('should clear current event from storage', async () => {
+      chromeAPI.setStorageData.mockResolvedValueOnce();
+      
       await storage.clearCurrentEvent();
       
       expect(chromeAPI.setStorageData).toHaveBeenCalledWith({ currentEvent: null });
@@ -179,9 +185,10 @@ describe('Storage Utility', () => {
       const originalDateNow = Date.now;
       Date.now = jest.fn(() => timestamp);
       
-      // Mock loadTabTimestamps
+      // Mock loadTabTimestamps with an empty object response
       const existingTimestamps = {};
       chromeAPI.getStorageData.mockResolvedValueOnce(existingTimestamps);
+      chromeAPI.setStorageData.mockResolvedValueOnce();
       
       await storage.updateTabTimestamp(tabId);
       
@@ -204,6 +211,7 @@ describe('Storage Utility', () => {
       Date.now = jest.fn(() => timestamp);
       
       chromeAPI.getStorageData.mockResolvedValueOnce(existingTimestamps);
+      chromeAPI.setStorageData.mockResolvedValueOnce();
       
       await storage.updateTabTimestamp(tabId);
       
@@ -229,6 +237,7 @@ describe('Storage Utility', () => {
       const existingTimestamps = { 123: Date.now(), 456: Date.now() - 1000 };
       
       chromeAPI.getStorageData.mockResolvedValueOnce(existingTimestamps);
+      chromeAPI.setStorageData.mockResolvedValueOnce();
       
       await storage.removeTabTimestamp(tabId);
       
@@ -236,7 +245,6 @@ describe('Storage Utility', () => {
       expect(chromeAPI.setStorageData).toHaveBeenCalledWith({
         tabTimestamps: expectedTimestamps
       });
-
     });
     
     test('should handle case when tab timestamp does not exist', async () => {
@@ -244,6 +252,7 @@ describe('Storage Utility', () => {
       const existingTimestamps = { 456: Date.now() - 1000 };
       
       chromeAPI.getStorageData.mockResolvedValueOnce(existingTimestamps);
+      chromeAPI.setStorageData.mockResolvedValueOnce();
       
       await storage.removeTabTimestamp(tabId);
       
@@ -303,4 +312,4 @@ describe('Storage Utility', () => {
       expect(duration).toBe(0);
     });
   });
-}); 
+});

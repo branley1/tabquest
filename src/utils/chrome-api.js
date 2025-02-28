@@ -1,220 +1,250 @@
-// Chrome API wrapper for better testability
-// This class abstracts Chrome API interactions to make them easier to mock in tests
-
+// Chrome API wrapper for testing and non-extension environments
 class ChromeAPI {
   constructor() {
-    // Initialize memory storage for testing
     this._memoryStorage = {};
+    this.isExtensionEnvironment = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
     
-    // Check if we're in a browser environment with Chrome API
-    this.isExtensionEnvironment = typeof chrome !== 'undefined' && 
-                                 chrome.storage !== undefined && 
-                                 chrome.tabs !== undefined;
+    // Set up notifications API
+    this.notifications = {
+      create: async (id, options) => {
+        if (this.isExtensionEnvironment) {
+          return new Promise((resolve, reject) => {
+            try {
+              chrome.notifications.create(id, options, (notificationId) => {
+                if (chrome.runtime.lastError) {
+                  reject(chrome.runtime.lastError);
+                  return;
+                }
+                resolve(notificationId);
+              });
+            } catch (error) {
+              reject(error);
+            }
+          });
+        }
+        console.log('Notification created:', options);
+        return Promise.resolve('notification-id');
+      }
+    };
     
-    // Storage namespace for local storage
+    // Set up storage API
     this.storage = {
-      local: {
-        set: (data, callback) => this._setLocalStorage(data, callback),
-        get: (keys, callback) => this._getLocalStorage(keys, callback)
+      sync: {
+        get: async (key) => {
+          if (this.isExtensionEnvironment) {
+            return new Promise((resolve, reject) => {
+              try {
+                chrome.storage.sync.get(key, (result) => {
+                  if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                    return;
+                  }
+                  resolve(result);
+                });
+              } catch (error) {
+                reject(error);
+              }
+            });
+          }
+          
+          if (typeof key === 'string') {
+            return Promise.resolve({ [key]: this._memoryStorage[key] });
+          }
+          
+          if (Array.isArray(key)) {
+            const result = {};
+            key.forEach(k => {
+              result[k] = this._memoryStorage[k];
+            });
+            return Promise.resolve(result);
+          }
+          
+          return Promise.resolve(this._memoryStorage);
+        },
+        
+        set: async (data) => {
+          if (this.isExtensionEnvironment) {
+            return new Promise((resolve, reject) => {
+              try {
+                chrome.storage.sync.set(data, () => {
+                  if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                    return;
+                  }
+                  resolve();
+                });
+              } catch (error) {
+                reject(error);
+              }
+            });
+          }
+          
+          Object.assign(this._memoryStorage, data);
+          return Promise.resolve();
+        }
+      }
+    };
+    
+    // Set up runtime API
+    this.runtime = {
+      sendMessage: async (message) => {
+        if (this.isExtensionEnvironment) {
+          return new Promise((resolve, reject) => {
+            try {
+              chrome.runtime.sendMessage(message, (response) => {
+                if (chrome.runtime.lastError) {
+                  reject(chrome.runtime.lastError);
+                  return;
+                }
+                resolve(response);
+              });
+            } catch (error) {
+              reject(error);
+            }
+          });
+        }
+        console.log('Message sent:', message);
+        return Promise.resolve({ success: true, mock: true });
+      },
+      
+      onMessage: {
+        addListener: (callback) => {
+          if (this.isExtensionEnvironment) {
+            chrome.runtime.onMessage.addListener(callback);
+          }
+        }
+      }
+    };
+    
+    // Set up tabs API
+    this.tabs = {
+      query: async (queryInfo) => {
+        if (this.isExtensionEnvironment) {
+          return new Promise((resolve, reject) => {
+            try {
+              chrome.tabs.query(queryInfo, (tabs) => {
+                if (chrome.runtime.lastError) {
+                  reject(chrome.runtime.lastError);
+                  return;
+                }
+                resolve(tabs);
+              });
+            } catch (error) {
+              reject(error);
+            }
+          });
+        }
+        return Promise.resolve([]);
+      },
+      
+      get: async (tabId) => {
+        if (this.isExtensionEnvironment) {
+          return new Promise((resolve, reject) => {
+            try {
+              chrome.tabs.get(tabId, (tab) => {
+                if (chrome.runtime.lastError) {
+                  reject(chrome.runtime.lastError);
+                  return;
+                }
+                resolve(tab);
+              });
+            } catch (error) {
+              reject(error);
+            }
+          });
+        }
+        return Promise.resolve({ id: tabId });
+      },
+      
+      onCreated: {
+        addListener: (callback) => {
+          if (this.isExtensionEnvironment) {
+            chrome.tabs.onCreated.addListener(callback);
+          }
+        }
+      },
+      
+      onRemoved: {
+        addListener: (callback) => {
+          if (this.isExtensionEnvironment) {
+            chrome.tabs.onRemoved.addListener(callback);
+          }
+        }
+      },
+      
+      onActivated: {
+        addListener: (callback) => {
+          if (this.isExtensionEnvironment) {
+            chrome.tabs.onActivated.addListener(callback);
+          }
+        }
+      },
+      
+      onUpdated: {
+        addListener: (callback) => {
+          if (this.isExtensionEnvironment) {
+            chrome.tabs.onUpdated.addListener(callback);
+          }
+        }
       }
     };
   }
   
-  // Mock for local storage set method
-  _setLocalStorage(data, callback) {
-    if (!this.isExtensionEnvironment) {
-      Object.keys(data).forEach(key => {
-        this._memoryStorage[key] = data[key];
-        
-        // Also set in sync storage for test compatibility
-        if (this._memoryStorage['sync'] === undefined) {
-          this._memoryStorage['sync'] = {};
-        }
-        this._memoryStorage['sync'][key] = data[key];
-      });
-      if (callback) callback();
-      return;
-    }
-    
-    chrome.storage.local.set(data, callback);
+  // Backwards compatibility methods for tests
+  createNotification(options) {
+    return this.notifications.create('', options);
   }
   
-  // Mock for local storage get method
-  _getLocalStorage(keys, callback) {
-    if (!this.isExtensionEnvironment) {
-      const result = {};
-      if (Array.isArray(keys)) {
-        keys.forEach(key => {
-          if (key in this._memoryStorage) {
-            result[key] = this._memoryStorage[key];
-          }
-        });
-      } else if (typeof keys === 'string') {
-        // Handle string key
-        if (keys in this._memoryStorage) {
-          result[keys] = this._memoryStorage[keys];
-        }
-      } else {
-        // Handle object or null
-        const keysToGet = keys === null ? Object.keys(this._memoryStorage) : Object.keys(keys);
-        keysToGet.forEach(key => {
-          if (key in this._memoryStorage) {
-            result[key] = this._memoryStorage[key];
-          }
-        });
-      }
-      if (callback) callback(result);
-      return;
+  // Storage compatibility methods for tests
+  async saveData(key, value) {
+    if (this.isExtensionEnvironment && chrome.runtime.lastError) {
+      return Promise.reject(chrome.runtime.lastError);
     }
-    
-    chrome.storage.local.get(keys, callback);
+    return this.storage.sync.set({ [key]: value });
   }
-
-  // Storage API
-  saveData(key, value) {
-    return new Promise((resolve, reject) => {
-      if (!this.isExtensionEnvironment) {
-        // In test environment, use localStorage or memory storage
-        try {
-          if (typeof localStorage !== 'undefined') {
-            localStorage.setItem(key, JSON.stringify(value));
-          } else {
-            // In-memory fallback for Node.js environment
-            this._memoryStorage[key] = value;
-          }
-          resolve();
-        } catch (error) {
-          reject(error);
-        }
-        return;
-      }
-
-      // In extension environment, use Chrome storage
-      chrome.storage.sync.set({ [key]: value }, () => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve();
-        }
-      });
-    });
+  
+  async loadData(key) {
+    if (this.isExtensionEnvironment && chrome.runtime.lastError) {
+      return Promise.reject(chrome.runtime.lastError);
+    }
+    const result = await this.storage.sync.get([key]);
+    return result[key];
   }
-
-  loadData(key) {
-    return new Promise((resolve, reject) => {
-      if (!this.isExtensionEnvironment) {
-        // In test environment, use localStorage or memory storage
-        try {
-          let value;
-          if (typeof localStorage !== 'undefined') {
-            const item = localStorage.getItem(key);
-            value = item ? JSON.parse(item) : null;
-          } else {
-            // In-memory fallback for Node.js environment
-            value = this._memoryStorage[key] || null;
-          }
-          resolve(value);
-        } catch (error) {
-          reject(error);
-        }
-        return;
-      }
-
-      // In extension environment, use Chrome storage
-      chrome.storage.sync.get([key], (result) => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve(result[key]);
-        }
-      });
-    });
-  }
-
-  // Helper methods for tests
+  
   setStorageData(data) {
-    return new Promise((resolve, reject) => {
-      if (!this.isExtensionEnvironment) {
-        try {
-          Object.keys(data).forEach(key => {
-            this._memoryStorage[key] = data[key];
-          });
-          resolve();
-        } catch (error) {
-          reject(error);
-        }
-        return;
-      }
-      
-      chrome.storage.sync.set(data, () => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve();
-        }
-      });
-    });
+    return this.storage.sync.set(data);
   }
   
   getStorageData(key) {
-    return new Promise((resolve, reject) => {
-      if (!this.isExtensionEnvironment) {
-        try {
-          resolve(this._memoryStorage[key] || null);
-        } catch (error) {
-          reject(error);
-        }
-        return;
-      }
-      
-      chrome.storage.sync.get(key, (result) => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve(result[key]);
-        }
-      });
-    });
+    return this.loadData(key);
   }
-
-  // Tabs API
+  
+  // Tab event listener compatibility methods
   addTabCreatedListener(callback) {
-    if (!this.isExtensionEnvironment) return;
-    chrome.tabs.onCreated.addListener(callback);
+    return this.tabs.onCreated.addListener(callback);
   }
-
-  addTabActivatedListener(callback) {
-    if (!this.isExtensionEnvironment) return;
-    chrome.tabs.onActivated.addListener(callback);
-  }
-
-  addTabUpdatedListener(callback) {
-    if (!this.isExtensionEnvironment) return;
-    chrome.tabs.onUpdated.addListener(callback);
-  }
-
+  
   addTabRemovedListener(callback) {
-    if (!this.isExtensionEnvironment) return;
-    chrome.tabs.onRemoved.addListener(callback);
+    return this.tabs.onRemoved.addListener(callback);
   }
-
-  // Notifications API
-  createNotification(options) {
-    if (!this.isExtensionEnvironment) {
-      console.log('Notification (mock):', options);
-      return;
-    }
-    
-    chrome.notifications.create(options);
+  
+  addTabActivatedListener(callback) {
+    return this.tabs.onActivated.addListener(callback);
   }
-
-  // Runtime API
+  
+  addTabUpdatedListener(callback) {
+    return this.tabs.onUpdated.addListener(callback);
+  }
+  
   addMessageListener(callback) {
-    if (!this.isExtensionEnvironment) return;
-    chrome.runtime.onMessage.addListener(callback);
+    return this.runtime.onMessage.addListener(callback);
+  }
+  
+  _setExtensionEnvironment(value) {
+    this.isExtensionEnvironment = value;
   }
 }
 
 // Export a singleton instance
-const chromeAPI = new ChromeAPI();
-export default chromeAPI; 
+export const chromeAPI = new ChromeAPI();
+export default chromeAPI; // For backwards compatibility

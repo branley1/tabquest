@@ -18,13 +18,22 @@ import {
   showLevelUpNotification,
   showEventNotification,
   showQuestCompletionNotification
-} from '../src/utils/notification.js';
+} from '../src/utils/notifications.js';
 
 // Mock all imports
 jest.mock('../src/models/player.js');
 jest.mock('../src/utils/events.js');
 jest.mock('../src/utils/storage.js');
-jest.mock('../src/utils/notification.js');
+jest.mock('../src/utils/notifications.js', () => {
+  return {
+    showXPNotification: jest.fn().mockResolvedValue(true),
+    showGoldNotification: jest.fn().mockResolvedValue(true),
+    showLevelUpNotification: jest.fn().mockResolvedValue(true),
+    showEventNotification: jest.fn().mockResolvedValue(true),
+    showQuestCompletionNotification: jest.fn().mockResolvedValue(true),
+    showTabClosedNotification: jest.fn().mockResolvedValue(true)
+  };
+});
 
 // Simplified test for Background Service Worker
 describe('Background Service Worker', () => {

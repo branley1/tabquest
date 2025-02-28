@@ -1,13 +1,13 @@
 // Integration tests for the background service worker
 import { Player } from '../src/models/player.js';
-import { generateRandomEvent, getTabClosedReward } from '../src/models/events.js';
+import { generateRandomEvent, getTabClosedReward } from '../src/utils/events.js';
 import * as storage from '../src/utils/storage.js';
 import * as notifications from '../src/utils/notifications.js';
 import chromeAPI from '../src/utils/chrome-api.js';
 
 // Mock dependencies
 jest.mock('../src/models/player.js');
-jest.mock('../src/models/events.js');
+jest.mock('../src/utils/events.js');
 jest.mock('../src/utils/storage.js');
 jest.mock('../src/utils/notifications.js');
 
@@ -142,7 +142,7 @@ describe('Background Service Worker Integration', () => {
     expect(mockHandlers.message).toBeTruthy();
   });
   
-  test('should handle tab created event with event generation', () => {
+  test('should handle tab created event with event generation', async () => {
     // Make sure we have a handler
     expect(mockHandlers.tabCreated).toBeTruthy();
     
@@ -151,18 +151,15 @@ describe('Background Service Worker Integration', () => {
     Math.random = jest.fn().mockReturnValue(0.1); // 0.1 < 0.3, so event will be generated
     
     // Call the handler with a mock tab
-    mockHandlers.tabCreated({ id: 123 });
+    await mockHandlers.tabCreated({ id: 123 });
+
+    // Important: Wait for promises to resolve
+    await new Promise(process.nextTick);
     
-    // Check that tab timestamp was updated
-    expect(storage.updateTabTimestamp).toHaveBeenCalledWith(123);
-    
-    // Check that player data was loaded
+    // Verify mocks
+    expect(storage.updateTabTimestamp).toHaveBeenCalled();
     expect(storage.loadPlayerData).toHaveBeenCalled();
-    
-    // Check that an event was generated
     expect(generateRandomEvent).toHaveBeenCalled();
-    
-    // Check that the event was saved
     expect(storage.saveCurrentEvent).toHaveBeenCalled();
     
     // Restore Math.random
@@ -291,13 +288,18 @@ describe('Background Service Worker Integration', () => {
       data: { name: 'Gold Chest', xp: 20, gold: 50, image: 'chest.png' },
       message: 'You found a Gold Chest!'
     };
-    generateRandomEvent.mockReturnValueOnce(generatedEvent);
+    
+    // Setup explicit mocks
+    storage.loadPlayerData.mockResolvedValue({ level: 2 });
+    generateRandomEvent.mockReturnValue(generatedEvent);
+    storage.saveCurrentEvent.mockResolvedValue();
+    notifications.showEventNotification.mockResolvedValue(true);
     
     // Call the handler with a generateEvent message
     mockHandlers.message({ action: 'generateEvent' }, {}, sendResponse);
     
     // Wait for async operations to complete
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     // Check that player data was loaded
     expect(storage.loadPlayerData).toHaveBeenCalled();

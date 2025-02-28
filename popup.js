@@ -1,29 +1,79 @@
 // TabQuest Popup JavaScript
 
-// DOM Elements
-const levelBadge = document.getElementById('level-badge');
-const playerXp = document.getElementById('player-xp');
-const xpNeeded = document.getElementById('xp-needed');
-const playerGold = document.getElementById('player-gold');
-const characterSelection = document.getElementById('character-selection');
-const confirmClassBtn = document.getElementById('confirm-class');
-const currentEventSection = document.getElementById('current-event');
-const eventContainer = document.getElementById('event-container');
-const buffsContainer = document.getElementById('buffs-container');
-const noBuffsMessage = document.getElementById('no-buffs-message');
-const questsContainer = document.getElementById('quests-container');
-const achievementsContainer = document.getElementById('achievements-container');
-const noAchievementsMessage = document.getElementById('no-achievements-message');
-const gameContainer = document.getElementById('game-container');
+// Add state management and cleanup utilities at the top
+const STATE = {
+  initialized: false,
+  eventListeners: new Set(),
+};
+
+// Helper function for safe DOM lookup
+const getEl = (id) => {
+  const el = document.getElementById(id);
+  if (!el) { console.warn(`Element with ID "${id}" not found`); }
+  return el;
+};
+
+// Helper for safe message sending
+const sendMessage = (message) => {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Chrome runtime error:', chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        resolve(response);
+      });
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      reject(error);
+    }
+  });
+};
+
+// Helper for safe event listener addition with cleanup
+const addSafeEventListener = (element, event, handler) => {
+  if (!element) {
+    console.warn(`Attempted to add ${event} listener to non-existent element`);
+    return;
+  }
+  element.addEventListener(event, handler);
+  STATE.eventListeners.add({ element, event, handler });
+};
+
+// Cleanup function
+const cleanup = () => {
+  STATE.eventListeners.forEach(({ element, event, handler }) => {
+    element.removeEventListener(event, handler);
+  });
+  STATE.eventListeners.clear();
+};
+
+// Replace DOM element retrieval using getEl
+const levelBadge = getEl('level-badge');
+const playerXp = getEl('player-xp');
+const xpNeeded = getEl('xp-needed');
+const playerGold = getEl('player-gold');
+const characterSelection = getEl('character-selection');
+const confirmClassBtn = getEl('confirm-class');
+const currentEventSection = getEl('current-event');
+const eventContainer = getEl('event-container');
+const buffsContainer = getEl('buffs-container');
+const noBuffsMessage = getEl('no-buffs-message');
+const questsContainer = getEl('quests-container');
+const achievementsContainer = getEl('achievements-container');
+const noAchievementsMessage = getEl('no-achievements-message');
+const gameContainer = getEl('game-container');
 
 // Templates
-const monsterTemplate = document.getElementById('monster-event-template');
-const treasureTemplate = document.getElementById('treasure-event-template');
-const riddleTemplate = document.getElementById('riddle-event-template');
-const powerupTemplate = document.getElementById('powerup-event-template');
-const buffTemplate = document.getElementById('buff-template');
-const questTemplate = document.getElementById('quest-template');
-const achievementTemplate = document.getElementById('achievement-template');
+const monsterTemplate = getEl('monster-event-template');
+const treasureTemplate = getEl('treasure-event-template');
+const riddleTemplate = getEl('riddle-event-template');
+const powerupTemplate = getEl('powerup-event-template');
+const buffTemplate = getEl('buff-template');
+const questTemplate = getEl('quest-template');
+const achievementTemplate = getEl('achievement-template');
 
 // Game state
 let player = null;
@@ -34,59 +84,76 @@ let selectedClass = null;
 import * as storage from './src/utils/storage.js';
 import { Player, CHARACTER_CLASSES } from './src/models/player.js';
 
-// Load player data from background script
+// Load player data from background script with improved error handling
 const loadPlayerData = async () => {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ action: 'getPlayerData' }, (response) => {
-      if (response && response.playerData) {
-        player = response.playerData;
-      }
-      resolve();
-    });
-  });
-};
-
-// Load current event from background script
-const loadCurrentEvent = async () => {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ action: 'getCurrentEvent' }, (response) => {
-      if (response && response.eventData) {
-        currentEvent = response.eventData;
-      }
-      resolve();
-    });
-  });
-};
-
-// Update player stats display
-const updatePlayerStats = () => {
-  levelBadge.textContent = player.level;
-  playerXp.textContent = player.xp;
-  
-  // Calculate XP needed for next level
-  const xpForNextLevel = Math.floor(100 * Math.pow(1.5, player.level - 1));
-  xpNeeded.textContent = xpForNextLevel;
-  
-  playerGold.textContent = player.gold;
-  
-  // Update character class display
-  const playerClassElement = document.getElementById('player-class');
-  if (playerClassElement && player.characterClass) {
-    const characterClassName = CHARACTER_CLASSES[player.characterClass]?.name || player.characterClass;
-    playerClassElement.textContent = characterClassName;
-    
-    // You could also add a class icon
-    // playerClassElement.innerHTML = `<img src="icons/classes/${player.characterClass}.svg" alt="${characterClassName}" class="class-icon-small"> ${characterClassName}`;
+  try {
+    const response = await sendMessage({ action: 'getPlayerData' });
+    if (response?.playerData) {
+      player = response.playerData;
+    }
+  } catch (error) {
+    console.error('Failed to load player data:', error);
+    throw error;
   }
 };
 
-// Show character selection screen
-const showCharacterSelection = () => {
-  gameContainer.classList.add('hidden');
-  characterSelection.classList.remove('hidden');
+// Load current event with improved error handling
+const loadCurrentEvent = async () => {
+  try {
+    const response = await sendMessage({ action: 'getCurrentEvent' });
+    if (response?.eventData) {
+      currentEvent = response.eventData;
+    }
+  } catch (error) {
+    console.error('Failed to load current event:', error);
+    throw error;
+  }
+};
+
+// Update player stats with validation
+const updatePlayerStats = () => {
+  if (!player) {
+    console.warn('Attempted to update stats with no player data');
+    return;
+  }
+
+  if (levelBadge) levelBadge.textContent = player.level || 1;
+  if (playerXp) playerXp.textContent = player.xp || 0;
   
-  // Clear any existing content and rebuild
+  const xpForNextLevel = Math.floor(100 * Math.pow(1.5, (player.level || 1) - 1));
+  if (xpNeeded) xpNeeded.textContent = xpForNextLevel;
+  
+  if (playerGold) playerGold.textContent = player.gold || 0;
+  
+  const playerClassElement = getEl('player-class');
+  if (playerClassElement && player.characterClass) {
+    const characterClassName = CHARACTER_CLASSES[player.characterClass]?.name || player.characterClass;
+    playerClassElement.textContent = characterClassName;
+  }
+};
+
+// Define missing showGameInterface function
+const showGameInterface = () => {
+  if (gameContainer) {
+    gameContainer.classList.remove('hidden');
+  }
+  updatePlayerStats();
+  updateQuests();
+};
+
+// Show character selection with cleanup
+const showCharacterSelection = () => {
+  cleanup(); // Remove old listeners before adding new ones
+  
+  if (gameContainer) gameContainer.classList.add('hidden');
+  if (characterSelection) characterSelection.classList.remove('hidden');
+  
   const classesContainer = document.querySelector('.class-cards-container');
+  if (!classesContainer) {
+    console.error('Class cards container not found');
+    return;
+  }
+  
   classesContainer.innerHTML = '';
   
   // Get class definitions
@@ -125,342 +192,392 @@ const showCharacterSelection = () => {
       <div class="class-bonuses">${classInfo.bonuses}</div>
     `;
     
-    classesContainer.appendChild(card);
+    if (classesContainer) classesContainer.appendChild(card);
     
-    // Add event listener
+    // Add event listener to card
     card.addEventListener('click', () => {
-      // Remove selected class from all cards
-      document.querySelectorAll('.class-card').forEach(c => 
-        c.classList.remove('selected'));
-      
-      // Add selected class to clicked card
+      document.querySelectorAll('.class-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
-      
-      // Set the selected class
       selectedClass = className;
-      
-      // Enable confirm button
-      confirmClassBtn.disabled = false;
+      if (confirmClassBtn) confirmClassBtn.disabled = false;
     });
   });
   
-  // Add event listener to confirm button
-  confirmClassBtn.addEventListener('click', async () => {
-    if (selectedClass) {
-      // Disable button and show loading state
-      confirmClassBtn.disabled = true;
-      confirmClassBtn.textContent = 'Creating character...';
-      
-      // Send message to background script to set class
-      chrome.runtime.sendMessage({
-        action: 'setCharacterClass',
-        className: selectedClass
-      }, async (response) => {
-        if (response && response.success) {
-          // Clear the needs class selection flag
-          await chromeAPI.storage.local.set({ 'needsClassSelection': false });
-          
-          // Add a nice transition effect
-          characterSelection.classList.add('fade-out');
-          
-          // Wait for transition
-          setTimeout(async () => {
-            // Hide character selection and reload data
-            characterSelection.classList.add('hidden');
-            characterSelection.classList.remove('fade-out');
+  // Add event listener to confirm button if it exists
+  if (confirmClassBtn) {
+    confirmClassBtn.addEventListener('click', async () => {
+      if (selectedClass) {
+        confirmClassBtn.disabled = true;
+        confirmClassBtn.textContent = 'Creating character...';
+        
+        chrome.runtime.sendMessage({
+          action: 'setCharacterClass',
+          className: selectedClass
+        }, async (response) => {
+          if (response && response.success) {
+            // Clear the needs class selection flag
+            await chromeAPI.storage.local.set({ 'needsClassSelection': false });
             
-            // Show welcome message
-            const playerData = await loadPlayerData();
-            const player = new Player(playerData);
+            // Add a nice transition effect
+            characterSelection.classList.add('fade-out');
             
-            // Show welcome notification
-            showNotification(
-              `Welcome, brave ${CHARACTER_CLASSES[player.characterClass].name}!`, 
-              'Your adventure begins now. Close tabs to earn XP and gold!'
-            );
-            
-            // Update UI with player data
-            gameContainer.classList.remove('hidden');
-            updatePlayerStats();
-            
-            // Load current event if any
-            await loadCurrentEvent();
-            if (currentEvent) {
-              displayCurrentEvent();
-            }
-          }, 500);
-        } else {
-          // Show error
-          confirmClassBtn.textContent = 'Try Again';
-          confirmClassBtn.disabled = false;
-          showNotification('Error', response.error || 'Failed to select class');
-        }
-      });
-    }
-  });
+            // Wait for transition
+            setTimeout(async () => {
+              // Hide character selection and reload data
+              characterSelection.classList.add('hidden');
+              characterSelection.classList.remove('fade-out');
+              
+              // Show welcome message
+              const playerData = await loadPlayerData();
+              const newPlayer = new Player(playerData);
+              
+              // Show welcome notification
+              showNotification(
+                `Welcome, brave ${CHARACTER_CLASSES[newPlayer.characterClass].name}!`, 
+                'Your adventure begins now. Close tabs to earn XP and gold!'
+              );
+              
+              // Update UI with player data
+              if (gameContainer) gameContainer.classList.remove('hidden');
+              updatePlayerStats();
+              
+              // Load current event if any
+              await loadCurrentEvent();
+              if (currentEvent) {
+                displayCurrentEvent();
+              }
+            }, 500);
+          } else {
+            // Show error
+            confirmClassBtn.textContent = 'Try Again';
+            confirmClassBtn.disabled = false;
+            showNotification('Error', response.error || 'Failed to select class');
+          }
+        });
+      }
+    });
+  }
 };
 
-// Display current event
-const displayCurrentEvent = () => {
-  // Clear event container
-  eventContainer.innerHTML = '';
+// Validate event data
+const validateEventData = (event) => {
+  if (!event || typeof event !== 'object') return false;
+  if (!event.type || !event.data) return false;
   
-  // Show event section
-  currentEventSection.classList.remove('hidden');
-  
-  // Create event element based on type
-  let eventElement;
-  
-  switch (currentEvent.type) {
+  switch (event.type) {
     case 'monster':
-      eventElement = createMonsterEvent(currentEvent.data);
-      break;
+      return event.data.name && event.data.level && 
+             typeof event.data.xp === 'number' && 
+             typeof event.data.gold === 'number';
     case 'treasure':
-      eventElement = createTreasureEvent(currentEvent.data);
-      break;
+      return event.data.name && 
+             typeof event.data.xp === 'number' && 
+             typeof event.data.gold === 'number';
     case 'riddle':
-      eventElement = createRiddleEvent(currentEvent.data);
-      break;
+      return event.data.question && 
+             typeof event.data.xp === 'number' && 
+             typeof event.data.gold === 'number';
     case 'powerUp':
-      eventElement = createPowerUpEvent(currentEvent.data);
-      break;
+      return event.data.name && event.data.description && 
+             typeof event.data.duration === 'number';
     default:
-      return;
+      return false;
+  }
+};
+
+// Display current event with validation
+const displayCurrentEvent = () => {
+  if (!currentEvent || !validateEventData(currentEvent)) {
+    console.error('Invalid event data:', currentEvent);
+    return;
+  }
+
+  if (eventContainer) eventContainer.innerHTML = '';
+  if (currentEventSection) currentEventSection.classList.remove('hidden');
+  
+  let eventElement;
+  try {
+    switch (currentEvent.type) {
+      case 'monster':
+        eventElement = createMonsterEvent(currentEvent.data);
+        break;
+      case 'treasure':
+        eventElement = createTreasureEvent(currentEvent.data);
+        break;
+      case 'riddle':
+        eventElement = createRiddleEvent(currentEvent.data);
+        break;
+      case 'powerUp':
+        eventElement = createPowerUpEvent(currentEvent.data);
+        break;
+      default:
+        console.warn('Unknown event type:', currentEvent.type);
+        return;
+    }
+  } catch (error) {
+    console.error('Failed to create event element:', error);
+    return;
   }
   
-  // Add event to container
-  if (eventElement) {
+  if (eventElement && eventContainer) {
     eventContainer.appendChild(eventElement);
   }
 };
 
-// Create monster event element
+// Safe template cloning
+const safeCloneTemplate = (template, type) => {
+  if (!template) {
+    throw new Error(`Template for ${type} not found`);
+  }
+  try {
+    return template.content.cloneNode(true);
+  } catch (error) {
+    throw new Error(`Failed to clone ${type} template: ${error.message}`);
+  }
+};
+
+// Safe querySelector with error handling
+const safeQuerySelector = (element, selector) => {
+  const result = element.querySelector(selector);
+  if (!result) {
+    throw new Error(`Element with selector "${selector}" not found`);
+  }
+  return result;
+};
+
+// Create monster event element with error handling
 const createMonsterEvent = (monster) => {
-  const clone = monsterTemplate.content.cloneNode(true);
-  
-  // Set monster details
-  clone.querySelector('.monster-image').src = `icons/monsters/${monster.image}`;
-  clone.querySelector('.monster-name').textContent = monster.name;
-  clone.querySelector('.monster-level span').textContent = monster.level;
-  clone.querySelector('.monster-rewards .xp').textContent = monster.xp;
-  clone.querySelector('.monster-rewards .gold').textContent = monster.gold;
-  
-  // Add event listener to defeat button
-  clone.querySelector('.defeat-monster').addEventListener('click', () => {
-    // Send message to background script to defeat monster
-    chrome.runtime.sendMessage({ action: 'handleMonsterDefeat' }, async (response) => {
-      if (response && response.success) {
-        // Hide event section
-        currentEventSection.classList.add('hidden');
-        
-        // Reload player data
-        await loadPlayerData();
-        updatePlayerStats();
-        updateQuests();
+  try {
+    const clone = safeCloneTemplate(monsterTemplate, 'monster');
+    
+    safeQuerySelector(clone, '.monster-image').src = `icons/monsters/${monster.image}`;
+    safeQuerySelector(clone, '.monster-name').textContent = monster.name;
+    safeQuerySelector(clone, '.monster-level span').textContent = monster.level;
+    safeQuerySelector(clone, '.monster-rewards .xp').textContent = monster.xp;
+    safeQuerySelector(clone, '.monster-rewards .gold').textContent = monster.gold;
+    
+    const defeatButton = safeQuerySelector(clone, '.defeat-monster');
+    addSafeEventListener(defeatButton, 'click', handleMonsterDefeat);
+    
+    return clone;
+  } catch (error) {
+    console.error('Failed to create monster event:', error);
+    return null;
+  }
+};
+
+// Create treasure event element with error handling
+const createTreasureEvent = (treasure) => {
+  try {
+    const clone = safeCloneTemplate(treasureTemplate, 'treasure');
+    
+    safeQuerySelector(clone, '.treasure-image').src = `icons/treasures/${treasure.image}`;
+    safeQuerySelector(clone, '.treasure-name').textContent = treasure.name;
+    safeQuerySelector(clone, '.treasure-rewards .xp').textContent = treasure.xp;
+    safeQuerySelector(clone, '.treasure-rewards .gold').textContent = treasure.gold;
+    
+    return clone;
+  } catch (error) {
+    console.error('Failed to create treasure event:', error);
+    return null;
+  }
+};
+
+// Create riddle event element with error handling
+const createRiddleEvent = (riddle) => {
+  try {
+    const clone = safeCloneTemplate(riddleTemplate, 'riddle');
+    
+    safeQuerySelector(clone, '.riddle-question').textContent = riddle.question;
+    safeQuerySelector(clone, '.riddle-rewards .xp').textContent = riddle.xp;
+    safeQuerySelector(clone, '.riddle-rewards .gold').textContent = riddle.gold;
+    
+    const submitButton = safeQuerySelector(clone, '.submit-answer');
+    const answerInput = safeQuerySelector(clone, '.riddle-answer');
+    
+    addSafeEventListener(submitButton, 'click', () => {
+      const answer = answerInput.value.trim();
+      if (answer) {
+        handleRiddleAnswer(answer);
       }
     });
-  });
-  
-  return clone;
-};
-
-// Create treasure event element
-const createTreasureEvent = (treasure) => {
-  const clone = treasureTemplate.content.cloneNode(true);
-  
-  // Set treasure details
-  clone.querySelector('.treasure-image').src = `icons/treasures/${treasure.image}`;
-  clone.querySelector('.treasure-name').textContent = treasure.name;
-  clone.querySelector('.treasure-rewards .xp').textContent = treasure.xp;
-  clone.querySelector('.treasure-rewards .gold').textContent = treasure.gold;
-  
-  return clone;
-};
-
-// Create riddle event element
-const createRiddleEvent = (riddle) => {
-  const clone = riddleTemplate.content.cloneNode(true);
-  
-  // Set riddle details
-  clone.querySelector('.riddle-question').textContent = riddle.question;
-  clone.querySelector('.riddle-rewards .xp').textContent = riddle.xp;
-  clone.querySelector('.riddle-rewards .gold').textContent = riddle.gold;
-  
-  // Add event listener to submit button
-  clone.querySelector('.submit-answer').addEventListener('click', () => {
-    const answer = clone.querySelector('.riddle-answer').value.trim();
     
-    if (answer) {
-      // Send message to background script to check answer
-      chrome.runtime.sendMessage({
-        action: 'handleRiddleAnswer',
-        answer: answer
-      }, async (response) => {
-        if (response && response.success) {
-          if (response.correct) {
-            // Hide event section
-            currentEventSection.classList.add('hidden');
-            
-            // Reload player data
-            await loadPlayerData();
-            updatePlayerStats();
-          } else {
-            // Show incorrect answer message
-            alert('Incorrect answer. Try again!');
-          }
-        }
-      });
-    }
-  });
-  
-  return clone;
-};
-
-// Create power-up event element
-const createPowerUpEvent = (powerUp) => {
-  const clone = powerupTemplate.content.cloneNode(true);
-  
-  // Set power-up details
-  clone.querySelector('.powerup-image').src = `icons/powerups/${powerUp.image}`;
-  clone.querySelector('.powerup-name').textContent = powerUp.name;
-  clone.querySelector('.powerup-description').textContent = powerUp.description;
-  
-  // Format duration (convert seconds to minutes)
-  const minutes = Math.floor(powerUp.duration / 60);
-  clone.querySelector('.powerup-duration span').textContent = `${minutes} minutes`;
-  
-  return clone;
-};
-
-// Update buffs display
-const updateBuffs = () => {
-  // Clear buffs container
-  buffsContainer.innerHTML = '';
-  
-  if (!player || !player.buffs || player.buffs.length === 0) {
-    // Show no buffs message
-    buffsContainer.appendChild(noBuffsMessage);
-    return;
+    return clone;
+  } catch (error) {
+    console.error('Failed to create riddle event:', error);
+    return null;
   }
+};
+
+// Create power-up event element with error handling
+const createPowerUpEvent = (powerUp) => {
+  try {
+    const clone = safeCloneTemplate(powerupTemplate, 'power-up');
+    
+    safeQuerySelector(clone, '.powerup-image').src = `icons/powerups/${powerUp.image}`;
+    safeQuerySelector(clone, '.powerup-name').textContent = powerUp.name;
+    safeQuerySelector(clone, '.powerup-description').textContent = powerUp.description;
+    
+    const minutes = Math.floor(powerUp.duration / 60);
+    safeQuerySelector(clone, '.powerup-duration span').textContent = `${minutes} minutes`;
+    
+    return clone;
+  } catch (error) {
+    console.error('Failed to create power-up event:', error);
+    return null;
+  }
+};
+
+// Update buffs display with validation
+const updateBuffs = () => {
+  if (!buffsContainer) return;
   
-  // Hide no buffs message
-  noBuffsMessage.remove();
-  
-  // Current time
-  const now = Date.now();
-  
-  // Display each buff
-  player.buffs.forEach(buff => {
-    // Skip expired buffs
-    if (buff.expiresAt < now) {
+  try {
+    buffsContainer.innerHTML = '';
+    
+    if (!player?.buffs?.length) {
+      if (noBuffsMessage) buffsContainer.appendChild(noBuffsMessage);
       return;
     }
     
-    const clone = buffTemplate.content.cloneNode(true);
+    if (noBuffsMessage) noBuffsMessage.remove();
     
-    // Set buff details
-    clone.querySelector('.buff-icon').src = `icons/powerups/${buff.image}`;
-    clone.querySelector('.buff-name').textContent = buff.name;
-    clone.querySelector('.buff-description').textContent = buff.description;
+    const now = Date.now();
+    const activeBuffs = player.buffs.filter(buff => buff.expiresAt > now);
     
-    // Calculate remaining time percentage
-    const totalDuration = buff.duration * 1000;
-    const elapsed = now - (buff.expiresAt - totalDuration);
-    const percentage = Math.max(0, 100 - (elapsed / totalDuration * 100));
-    
-    // Set timer bar width
-    clone.querySelector('.timer-bar').style.width = `${percentage}%`;
-    
-    buffsContainer.appendChild(clone);
-  });
+    activeBuffs.forEach(buff => {
+      try {
+        const clone = safeCloneTemplate(buffTemplate, 'buff');
+        
+        safeQuerySelector(clone, '.buff-icon').src = `icons/powerups/${buff.image}`;
+        safeQuerySelector(clone, '.buff-name').textContent = buff.name;
+        safeQuerySelector(clone, '.buff-description').textContent = buff.description;
+        
+        const totalDuration = buff.duration * 1000;
+        const elapsed = now - (buff.expiresAt - totalDuration);
+        const percentage = Math.max(0, 100 - (elapsed / totalDuration * 100));
+        
+        safeQuerySelector(clone, '.timer-bar').style.width = `${percentage}%`;
+        
+        buffsContainer.appendChild(clone);
+      } catch (error) {
+        console.error('Failed to create buff element:', error);
+      }
+    });
+  } catch (error) {
+    console.error('Failed to update buffs:', error);
+  }
 };
 
-// Update quests display
+// Update quests display with validation
 const updateQuests = () => {
-  // Clear quests container
-  questsContainer.innerHTML = '';
-  
-  // Sort quests by completion status
-  const sortedQuests = [...player.quests].sort((a, b) => {
-    // Completed quests go to the bottom
-    if (a.completed && !b.completed) return 1;
-    if (!a.completed && b.completed) return -1;
-    return 0;
-  });
-  
-  // Display each quest
-  sortedQuests.forEach(quest => {
-    const clone = questTemplate.content.cloneNode(true);
-    
-    // Set quest details
-    clone.querySelector('.quest-name').textContent = quest.name;
-    clone.querySelector('.quest-description').textContent = quest.description;
-    
-    // Calculate progress percentage
-    const percentage = Math.min(100, (quest.progress / quest.goal) * 100);
-    
-    // Set progress bar width
-    clone.querySelector('.progress-fill').style.width = `${percentage}%`;
-    
-    // Set progress text
-    clone.querySelector('.progress-text').textContent = `${quest.progress}/${quest.goal}`;
-    
-    // Set quest rewards
-    if (quest.reward.xp) {
-      clone.querySelector('.reward-xp').textContent = `${quest.reward.xp} XP`;
-    } else {
-      clone.querySelector('.reward-xp').remove();
-    }
-    
-    if (quest.reward.gold) {
-      clone.querySelector('.reward-gold').textContent = `${quest.reward.gold} Gold`;
-    } else {
-      clone.querySelector('.reward-gold').remove();
-    }
-    
-    if (quest.reward.item) {
-      clone.querySelector('.reward-item').textContent = quest.reward.item.name;
-    } else {
-      clone.querySelector('.reward-item').remove();
-    }
-    
-    // Add completed class if quest is completed
-    if (quest.completed) {
-      clone.querySelector('.quest').classList.add('completed');
-    }
-    
-    questsContainer.appendChild(clone);
-  });
-};
-
-// Update achievements display
-const updateAchievements = () => {
-  // Clear achievements container
-  achievementsContainer.innerHTML = '';
-  
-  if (!player.achievements || player.achievements.length === 0) {
-    // Show no achievements message
-    achievementsContainer.appendChild(noAchievementsMessage);
+  if (!questsContainer || !player?.quests) {
+    console.warn('Cannot update quests: missing container or quest data');
     return;
   }
   
-  // Hide no achievements message
-  noAchievementsMessage.remove();
+  try {
+    questsContainer.innerHTML = '';
+    
+    const sortedQuests = [...player.quests].sort((a, b) => {
+      if (!a || !b) return 0;
+      if (a.completed && !b.completed) return 1;
+      if (!a.completed && b.completed) return -1;
+      return 0;
+    });
+    
+    sortedQuests.forEach(quest => {
+      if (!quest) return;
+      
+      try {
+        const clone = safeCloneTemplate(questTemplate, 'quest');
+        
+        safeQuerySelector(clone, '.quest-name').textContent = quest.name;
+        safeQuerySelector(clone, '.quest-description').textContent = quest.description;
+        
+        const percentage = Math.min(100, ((quest.progress || 0) / (quest.goal || 1)) * 100);
+        safeQuerySelector(clone, '.progress-fill').style.width = `${percentage}%`;
+        safeQuerySelector(clone, '.progress-text').textContent = 
+          `${quest.progress || 0}/${quest.goal || 1}`;
+        
+        const rewards = safeQuerySelector(clone, '.quest-rewards');
+        
+        if (quest.reward?.xp) {
+          const xpReward = rewards.querySelector('.reward-xp');
+          if (xpReward) xpReward.textContent = `${quest.reward.xp} XP`;
+        } else {
+          rewards.querySelector('.reward-xp')?.remove();
+        }
+        
+        if (quest.reward?.gold) {
+          const goldReward = rewards.querySelector('.reward-gold');
+          if (goldReward) goldReward.textContent = `${quest.reward.gold} Gold`;
+        } else {
+          rewards.querySelector('.reward-gold')?.remove();
+        }
+        
+        if (quest.reward?.item?.name) {
+          const itemReward = rewards.querySelector('.reward-item');
+          if (itemReward) itemReward.textContent = quest.reward.item.name;
+        } else {
+          rewards.querySelector('.reward-item')?.remove();
+        }
+        
+        if (quest.completed) {
+          safeQuerySelector(clone, '.quest').classList.add('completed');
+        }
+        
+        questsContainer.appendChild(clone);
+      } catch (error) {
+        console.error('Failed to create quest element:', error);
+      }
+    });
+  } catch (error) {
+    console.error('Failed to update quests:', error);
+  }
+};
+
+// Update achievements display with validation
+const updateAchievements = () => {
+  if (!achievementsContainer) {
+    console.warn('Cannot update achievements: missing container');
+    return;
+  }
   
-  // Display each achievement
-  player.achievements.forEach(achievement => {
-    const clone = achievementTemplate.content.cloneNode(true);
+  try {
+    achievementsContainer.innerHTML = '';
     
-    // Set achievement details
-    clone.querySelector('.achievement-title').textContent = achievement.title;
+    if (!player?.achievements?.length) {
+      if (achievementsContainer && noAchievementsMessage) {
+        achievementsContainer.appendChild(noAchievementsMessage);
+      }
+      return;
+    }
     
-    // Format date
-    const date = new Date(achievement.completedAt);
-    const formattedDate = date.toLocaleDateString();
-    clone.querySelector('.achievement-date').textContent = `Earned on ${formattedDate}`;
+    if (noAchievementsMessage) noAchievementsMessage.remove();
     
-    achievementsContainer.appendChild(clone);
-  });
+    player.achievements.forEach(achievement => {
+      if (!achievement) return;
+      
+      try {
+        const clone = safeCloneTemplate(achievementTemplate, 'achievement');
+        
+        safeQuerySelector(clone, '.achievement-title').textContent = 
+          achievement.title || 'Unknown Achievement';
+        
+        const date = new Date(achievement.completedAt || Date.now());
+        const formattedDate = date.toLocaleDateString();
+        safeQuerySelector(clone, '.achievement-date').textContent = 
+          `Earned on ${formattedDate}`;
+        
+        achievementsContainer.appendChild(clone);
+      } catch (error) {
+        console.error('Failed to create achievement element:', error);
+      }
+    });
+  } catch (error) {
+    console.error('Failed to update achievements:', error);
+  }
 };
 
 // Check if user is new (no character selected yet)
@@ -473,42 +590,56 @@ async function checkNewUser() {
   }
 }
 
-// Initialize popup when DOM is loaded
-document.addEventListener('DOMContentLoaded', async () => {
-  // First check if we need character selection
-  const data = await chromeAPI.storage.local.get('needsClassSelection');
-  const needsClassSelection = data.needsClassSelection;
-  
-  // Always load player data to get the current state
-  await loadPlayerData();
-  
-  // Show character selection if needed or if player has no class
-  if (needsClassSelection || !player || !player.characterClass) {
-    showCharacterSelection();
-  } else {
-    // Normal game initialization
-    updatePlayerStats();
-    updateQuests();
-    await loadCurrentEvent();
-    if (currentEvent) {
-      displayCurrentEvent();
+// Initialize popup with proper cleanup and error handling
+const initializePopup = async () => {
+  if (STATE.initialized) {
+    console.warn('Popup already initialized');
+    return;
+  }
+
+  try {
+    cleanup();
+    const data = await chromeAPI.storage.local.get('needsClassSelection');
+    await loadPlayerData();
+
+    if (data?.needsClassSelection || !player?.characterClass) {
+      await showCharacterSelection();
+    } else {
+      updatePlayerStats();
+      updateQuests();
+      const currentEventData = await loadCurrentEvent();
+      if (currentEventData) {
+        displayCurrentEvent();
+      }
+    }
+
+    addClassChangeButton();
+    STATE.initialized = true;
+  } catch (error) {
+    console.error('Failed to initialize popup:', error);
+    // Show error to user
+    if (getEl('error-message')) {
+      getEl('error-message').textContent = 'Failed to load game data. Please try again.';
     }
   }
-  
-  // Add class change button to settings
-  addClassChangeButton();
-});
+};
 
-// This should be dynamic, not hardcoded
+// Replace the DOMContentLoaded listener
+addSafeEventListener(document, 'DOMContentLoaded', initializePopup);
+
+// Add unload cleanup
+addSafeEventListener(window, 'unload', cleanup);
+
+// Define loadPlayerStats with error handling
 async function loadPlayerStats() {
   try {
     const playerData = await storage.loadPlayerData();
     
     if (playerData) {
-      document.getElementById('level').textContent = playerData.level || 1;
-      document.getElementById('xp').textContent = 
+      getEl('level').textContent = playerData.level || 1;
+      getEl('xp').textContent = 
         `${playerData.xp || 0} / ${playerData.xpToNextLevel || 100} XP`;
-      document.getElementById('gold').textContent = 
+      getEl('gold').textContent = 
         `${playerData.gold || 0} Gold`;
     } else {
       // Initialize new player if no data exists
@@ -521,10 +652,10 @@ async function loadPlayerStats() {
       };
       await storage.savePlayerData(newPlayer);
       // Display values from new player object
-      document.getElementById('level').textContent = newPlayer.level;
-      document.getElementById('xp').textContent = 
+      getEl('level').textContent = newPlayer.level;
+      getEl('xp').textContent = 
         `${newPlayer.xp} / ${newPlayer.xpToNextLevel} XP`;
-      document.getElementById('gold').textContent = 
+      getEl('gold').textContent = 
         `${newPlayer.gold} Gold`;
     }
   } catch (error) {
@@ -533,57 +664,121 @@ async function loadPlayerStats() {
 }
 
 // Set up character selection event listeners
-document.querySelectorAll('.character-option').forEach(option => {
-  option.addEventListener('click', async () => {
-    const characterClass = option.dataset.class;
-    // Initialize player with selected class
-    const newPlayer = new Player(characterClass);
-    await storage.savePlayerData(newPlayer.toJSON());
-    
-    // Hide selection screen, show game interface
-    showGameInterface();
+const characterOptions = document.querySelectorAll('.character-option');
+if (characterOptions) {
+  characterOptions.forEach(option => {
+    option.addEventListener('click', async () => {
+      const characterClass = option.dataset.class;
+      // Initialize player with selected class
+      const newPlayer = new Player(characterClass);
+      await storage.savePlayerData(newPlayer.toJSON());
+      
+      // Hide selection screen, show game interface
+      showGameInterface();
+    });
   });
-});
+}
 
-const img = document.getElementById('xp-icon');
-if (img) {
-  img.onerror = () => console.error('Failed to load image:', img.src);
-  img.onload = () => console.log('Image loaded successfully:', img.src);
+const xpIcon = getEl('xp-icon');
+if (xpIcon) {
+  xpIcon.onerror = () => console.error('Failed to load image:', xpIcon.src);
+  xpIcon.onload = () => console.log('Image loaded successfully:', xpIcon.src);
 } else {
   console.warn('Element not found:', 'xp-icon');
 }
 
 // Change any JS that sets image sources:
-document.getElementById('gold-icon').src = 'icons/gold.svg';
-document.getElementById('xp-icon').src = 'icons/xp.svg';
+const goldIcon = getEl('gold-icon');
+if (goldIcon) {
+  goldIcon.src = 'icons/gold.svg';
+}
+if (xpIcon) {
+  xpIcon.src = 'icons/xp.svg';
+}
 
 // Add this function to allow changing class later
 const addClassChangeButton = () => {
   const settingsContainer = document.querySelector('.settings-container');
   if (!settingsContainer) return;
   
-  const changeClassBtn = document.createElement('button');
-  changeClassBtn.textContent = 'Change Character Class';
-  changeClassBtn.className = 'settings-button';
-  
-  changeClassBtn.addEventListener('click', () => {
-    // Show character selection UI
-    showCharacterSelection();
+  try {
+    const changeClassBtn = document.createElement('button');
+    changeClassBtn.textContent = 'Change Character Class';
+    changeClassBtn.className = 'settings-button';
     
-    // Add a cancel button
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.className = 'secondary-button';
-    cancelBtn.style.marginRight = '10px';
+    const handleClassChange = () => {
+      showCharacterSelection();
+      
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.className = 'secondary-button';
+      cancelBtn.style.marginRight = '10px';
+      
+      const buttonsContainer = document.querySelector('.character-selection-buttons');
+      if (buttonsContainer) {
+        buttonsContainer.prepend(cancelBtn);
+        
+        const handleCancel = () => {
+          characterSelection.classList.add('hidden');
+          if (gameContainer) gameContainer.classList.remove('hidden');
+          cancelBtn.removeEventListener('click', handleCancel);
+        };
+        
+        addSafeEventListener(cancelBtn, 'click', handleCancel);
+      }
+    };
     
-    const buttonsContainer = document.querySelector('.character-selection-buttons');
-    buttonsContainer.prepend(cancelBtn);
-    
-    cancelBtn.addEventListener('click', () => {
-      characterSelection.classList.add('hidden');
-      gameContainer.classList.remove('hidden');
-    });
-  });
-  
-  settingsContainer.appendChild(changeClassBtn);
+    addSafeEventListener(changeClassBtn, 'click', handleClassChange);
+    settingsContainer.appendChild(changeClassBtn);
+  } catch (error) {
+    console.error('Failed to add class change button:', error);
+  }
 };
+
+// Update the event handlers to use sendMessage
+const handleMonsterDefeat = async () => {
+  try {
+    const response = await sendMessage({ action: 'handleMonsterDefeat' });
+    if (response?.success) {
+      if (currentEventSection) currentEventSection.classList.add('hidden');
+      await loadPlayerData();
+      updatePlayerStats();
+      updateQuests();
+    }
+  } catch (error) {
+    console.error('Failed to handle monster defeat:', error);
+  }
+};
+
+// Update riddle answer handler
+const handleRiddleAnswer = async (answer) => {
+  try {
+    const response = await sendMessage({ 
+      action: 'handleRiddleAnswer', 
+      answer: answer.trim() 
+    });
+    
+    if (response?.success) {
+      if (response.correct) {
+        if (currentEventSection) currentEventSection.classList.add('hidden');
+        await loadPlayerData();
+        updatePlayerStats();
+      } else {
+        alert('Incorrect answer. Try again!');
+      }
+    }
+  } catch (error) {
+    console.error('Failed to handle riddle answer:', error);
+  }
+};
+
+// Export for testing
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    validateEventData,
+    safeCloneTemplate,
+    safeQuerySelector,
+    cleanup,
+    STATE
+  };
+}
